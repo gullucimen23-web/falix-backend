@@ -132,24 +132,26 @@ async function checkUserAccess(uid, cost, reason) {
   const ref = db.collection("users").doc(uid);
 
   return db.runTransaction(async (tx) => {
-    const snap = await tx.get(ref);
+    let snap = await tx.get(ref);
 
-   if (!snap.exists) {
-  tx.set(ref, {
-    coin: 100,
-    premiumCoin: 0,
-    premium: false,
-    dailyUsage: 0,
-    lastUsageDate: "",
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
+    // 🔥 USER YOKSA OLUŞTUR
+    if (!snap.exists) {
+      tx.set(ref, {
+        coin: 100,
+        premiumCoin: 0,
+        premium: false,
+        dailyUsage: 0,
+        lastUsageDate: "",
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
 
-  return true;
-}
+      snap = await tx.get(ref); // 🔥 tekrar oku
+    }
+
     const data = snap.data() || {};
     const today = getTodayKey();
 
-    const coin = Number(data.coin || 0);
+    let coin = Number(data.coin || 0);
     const premium = Boolean(data.premium || false);
     let dailyUsage = Number(data.dailyUsage || 0);
     const lastUsageDate = String(data.lastUsageDate || "");
@@ -190,7 +192,6 @@ async function checkUserAccess(uid, cost, reason) {
     return true;
   });
 }
-
 app.post("/tarot", authMiddleware, async (req, res) => {
   try {
     const { cards = [], topic = "genel", userName = "Güzel Ruh" } = req.body;
