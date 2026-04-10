@@ -134,10 +134,18 @@ async function checkUserAccess(uid, cost, reason) {
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
 
-    if (!snap.exists) {
-      throw new Error("USER_NOT_FOUND");
-    }
+   if (!snap.exists) {
+  tx.set(ref, {
+    coin: 100,
+    premiumCoin: 0,
+    premium: false,
+    dailyUsage: 0,
+    lastUsageDate: "",
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
 
+  return true;
+}
     const data = snap.data() || {};
     const today = getTodayKey();
 
