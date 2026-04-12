@@ -178,11 +178,11 @@ async function checkUserAccess(uid, cost, reason) {
       throw new Error("DAILY_LIMIT");
     }
 
-    if (coin < cost) {
+    if (!premium && coin < cost) {
       throw new Error("NO_COIN");
     }
 
-    const newCoin = coin - cost;
+    const newCoin = premium ? coin : coin - cost;
 
     tx.update(ref, {
       coin: newCoin,
@@ -195,14 +195,16 @@ async function checkUserAccess(uid, cost, reason) {
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    const historyRef = ref.collection("coin_history").doc();
-    tx.set(historyRef, {
-      type: "spend",
-      amount: -cost,
-      balanceAfter: newCoin,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      meta: { reason },
-    });
+    if (!premium) {
+      const historyRef = ref.collection("coin_history").doc();
+      tx.set(historyRef, {
+        type: "spend",
+        amount: -cost,
+        balanceAfter: newCoin,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        meta: { reason },
+      });
+    }
 
     return true;
   });
