@@ -220,11 +220,28 @@ async function getUserProfile(uid) {
       memoryText: "",
       memoryCount: 0,
       profileSummary: "",
+      identityText: "",
     };
   }
 
   const userData = userSnap.data() || {};
   const premium = Boolean(userData.premium || false);
+
+  const name = safeUserName(userData.name || "");
+  const motherName = safeUserName(userData.motherName || "");
+  const birthYear = userData.birthYear ? String(userData.birthYear) : "";
+  const motherBirthYear = userData.motherBirthYear
+    ? String(userData.motherBirthYear)
+    : "";
+  const relationshipStatus = String(userData.relationshipStatus || "").trim();
+
+  const identityParts = [
+    name ? `Ad: ${name}` : "",
+    motherName ? `Anne adı: ${motherName}` : "",
+    birthYear ? `Doğum yılı: ${birthYear}` : "",
+    motherBirthYear ? `Anne doğum yılı: ${motherBirthYear}` : "",
+    relationshipStatus ? `İlişki durumu: ${relationshipStatus}` : "",
+  ].filter(Boolean);
 
   const readingsSnap = await userRef
     .collection("readings")
@@ -238,6 +255,7 @@ async function getUserProfile(uid) {
       memoryText: "",
       memoryCount: 0,
       profileSummary: "",
+      identityText: identityParts.join("\n"),
     };
   }
 
@@ -324,6 +342,7 @@ Kurallar:
     memoryText: memoryItems.join("\n---\n"),
     memoryCount: memoryItems.length,
     profileSummary,
+    identityText: identityParts.join("\n"),
   };
 }
 
@@ -333,6 +352,7 @@ function buildTarotSystemPrompt({
   memoryText,
   memoryCount,
   profileSummary,
+  identityText,
 }) {
   if (!isPremium) {
     return `
@@ -341,6 +361,8 @@ Sen Falix uygulamasının tarot yorumcususun.
 Kurallar:
 - Türkçe yaz.
 - İlk satır doğal şekilde "Merhaba ${cleanName}," diye başlasın.
+- Bu bir TAROT yorumudur.
+- Kahve falı, fincan, telve, köpük, şekil gibi ifadeleri ASLA kullanma.
 - Yorum zarif, profesyonel, mistik ve akıcı olsun.
 - Korkutucu, felaket odaklı veya kesin hüküm veren dil kullanma.
 - Kart isimlerini doğal şekilde yorumun içine yedir.
@@ -357,6 +379,9 @@ Sen Falix uygulamasının kişisel premium tarot yorumcususun.
 Bu kullanıcıyı daha önce yorumladın.
 Onu tamamen ezberlemiş gibi değil, ama enerjisini zaman içinde tanımış sezgisel bir yorumcu gibi yaklaş.
 
+Kullanıcıya dair bilgiler:
+${identityText || "Ek profil bilgisi yok."}
+
 Kullanıcının yakın geçmişteki fal hafızası (${memoryCount} kayıt):
 ${memoryText || "Henüz kayıt yok."}
 
@@ -366,9 +391,13 @@ ${profileSummary || "Henüz profil özeti yok."}
 Kurallar:
 - Türkçe yaz.
 - İlk satır doğal şekilde "Merhaba ${cleanName}," diye başlasın.
+- Bu bir TAROT yorumudur.
+- Kahve falı ile ilgili hiçbir şey söyleme.
+- "fincan", "telve", "kahve", "şekil gördüm" gibi ifadeler kullanma.
 - AI, sistem, model, analiz motoru gibi görünme.
 - Doğal, sıcak, sezgisel, zarif ve kişisel yaz.
 - Uygun yerlerde geçmişten gelen benzer enerjilere hafifçe değinebilirsin.
+- Kullanıcı bilgilerini kaba şekilde listeleme, doğal yedir.
 - Teknik ifade kullanma.
 - "Verilerine göre", "geçmiş kayıtlarına göre" gibi laflar kullanma.
 - Kullanıcı kendini görülmüş ve anlaşılmış hissetsin.
@@ -385,6 +414,7 @@ function buildCoffeeSystemPrompt({
   memoryText,
   memoryCount,
   profileSummary,
+  identityText,
 }) {
   if (!isPremium) {
     return `
@@ -418,6 +448,9 @@ Sen Falix uygulamasının kişisel premium kahve falı yorumcususun.
 Bu kullanıcı premium üye.
 Önceki enerjilerini açık açık saymadan, onları zaman içinde hissetmiş bir yorumcu gibi yaz.
 
+Kullanıcıya dair bilgiler:
+${identityText || "Ek profil bilgisi yok."}
+
 Kullanıcının yakın geçmişteki fal hafızası (${memoryCount} kayıt):
 ${memoryText || "Henüz kayıt yok."}
 
@@ -442,6 +475,7 @@ Kurallar:
 - AI gibi görünme.
 - Doğal, sıcak, sezgisel ve kişisel yaz.
 - Gerekirse geçmişten gelen tanıdık enerjilere hafifçe değin.
+- Kullanıcı bilgilerini doğal hissettir, göze sokma.
 - Teknik ifade kullanma.
 - Klişe tekrar yapma.
 - Her alan dolu gelsin.
@@ -470,6 +504,7 @@ app.post("/tarot", authMiddleware, async (req, res) => {
             memoryText: userProfile.memoryText,
             memoryCount: userProfile.memoryCount,
             profileSummary: userProfile.profileSummary,
+            identityText: userProfile.identityText,
           }),
         },
         {
@@ -545,6 +580,7 @@ app.post(
               memoryText: userProfile.memoryText,
               memoryCount: userProfile.memoryCount,
               profileSummary: userProfile.profileSummary,
+              identityText: userProfile.identityText,
             }),
           },
           {
