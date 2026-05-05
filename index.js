@@ -522,7 +522,7 @@ Eğer aşk konusu varsa doğal şekilde profil bilgisi eklemesini öner.`) +
     content: `Konu: ${topic}\nKartlar: ${cards.join(", ")}`,
   },
 ],
-    });
+    
 
     const result =
       response.choices?.[0]?.message?.content ||
