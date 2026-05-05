@@ -485,7 +485,7 @@ Kurallar:
 
 app.post("/tarot", authMiddleware, async (req, res) => {
   try {
-    const { cards = [], topic = "genel", userName = "Güzel Ruh" } = req.body;
+    const { cards = [], topic = "genel", userName = "Güzel Ruh", partnerInfo = "" } = req.body;
     const cleanName = safeUserName(userName);
 
     await checkUserAccess(req.uid, 80, "tarot_ai");
@@ -495,23 +495,33 @@ app.post("/tarot", authMiddleware, async (req, res) => {
     const response = await createWithRetry({
       model: "gpt-4.1-mini",
       temperature: userProfile.premium ? 0.95 : 0.9,
-      messages: [
-        {
-          role: "system",
-          content: buildTarotSystemPrompt({
-            cleanName,
-            isPremium: userProfile.premium,
-            memoryText: userProfile.memoryText,
-            memoryCount: userProfile.memoryCount,
-            profileSummary: userProfile.profileSummary,
-            identityText: userProfile.identityText,
-          }),
-        },
-        {
-          role: "user",
-          content: `Konu: ${topic}\nKartlar: ${cards.join(", ")}`,
-        },
-      ],
+     messages: [
+  {
+    role: "system",
+    content:
+  buildTarotSystemPrompt({
+    cleanName,
+    isPremium: userProfile.premium,
+    memoryText: userProfile.memoryText,
+    memoryCount: userProfile.memoryCount,
+    profileSummary: userProfile.profileSummary,
+    identityText: userProfile.identityText,
+  }) +
+  "\n" +
+  (partnerInfo
+    ? `İlişki yaşadığı kişi:
+${partnerInfo}
+
+Bu bilgileri özellikle aşk ve bağ yorumunda kullan.`
+    : `Kullanıcı partner bilgisi girmemiş.
+Eğer aşk konusu varsa doğal şekilde profil bilgisi eklemesini öner.`) +
+  "\nYorumun sonunda kullanıcıyı merakta bırak.",
+  },
+  {
+    role: "user",
+    content: `Konu: ${topic}\nKartlar: ${cards.join(", ")}`,
+  },
+],
     });
 
     const result =
@@ -562,6 +572,7 @@ app.post(
       }
 
       const cleanName = safeUserName(req.body?.userName);
+      const partnerInfo = req.body?.partnerInfo || "";
       await checkUserAccess(req.uid, 120, "coffee_ai");
 
       const userProfile = await getUserProfile(req.uid);
@@ -574,13 +585,24 @@ app.post(
         messages: [
           {
             role: "system",
-            content: buildCoffeeSystemPrompt({
-              cleanName,
-              isPremium: userProfile.premium,
-              memoryText: userProfile.memoryText,
-              memoryCount: userProfile.memoryCount,
-              profileSummary: userProfile.profileSummary,
-              identityText: userProfile.identityText,
+           content:
+  buildCoffeeSystemPrompt({
+    cleanName,
+    isPremium: userProfile.premium,
+    memoryText: userProfile.memoryText,
+    memoryCount: userProfile.memoryCount,
+    profileSummary: userProfile.profileSummary,
+    identityText: userProfile.identityText,
+  }) +
+  "\n" +
+  (partnerInfo
+    ? `İlişki yaşadığı kişi:
+${partnerInfo}
+
+Bu bilgileri özellikle aşk ve bağ yorumunda kullan.`
+    : `Kullanıcı partner bilgisi girmemiş.
+Eğer aşk konusu varsa doğal şekilde profil bilgisi eklemesini öner.`) +
+  "\nYorumun sonunda kullanıcıyı merakta bırak.",
             }),
           },
           {
