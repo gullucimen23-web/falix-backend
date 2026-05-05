@@ -582,46 +582,44 @@ app.post(
         model: "gpt-4.1-mini",
         response_format: { type: "json_object" },
         temperature: userProfile.premium ? 0.95 : 0.9,
-        messages: [
-          {
-            role: "system",
-           content:
-  buildCoffeeSystemPrompt({
-    cleanName,
-    isPremium: userProfile.premium,
-    memoryText: userProfile.memoryText,
-    memoryCount: userProfile.memoryCount,
-    profileSummary: userProfile.profileSummary,
-    identityText: userProfile.identityText,
-  }) +
-  "\n" +
-  (partnerInfo
-    ? `İlişki yaşadığı kişi:
+       messages: [
+  {
+    role: "system",
+    content:
+      buildCoffeeSystemPrompt({
+        cleanName,
+        isPremium: userProfile.premium,
+        memoryText: userProfile.memoryText,
+        memoryCount: userProfile.memoryCount,
+        profileSummary: userProfile.profileSummary,
+        identityText: userProfile.identityText,
+      }) +
+      "\n" +
+      (partnerInfo
+        ? `İlişki yaşadığı kişi:
 ${partnerInfo}
 
 Bu bilgileri özellikle aşk ve bağ yorumunda kullan.`
-    : `Kullanıcı partner bilgisi girmemiş.
+        : `Kullanıcı partner bilgisi girmemiş.
 Eğer aşk konusu varsa doğal şekilde profil bilgisi eklemesini öner.`) +
-  "\nYorumun sonunda kullanıcıyı merakta bırak.",
-            }),
-          },
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: "Bu kahve fincanı fotoğrafını yorumla. Fincandaki şekilleri sezgisel, doğal ve akıcı biçimde ele al.",
-              },
-              {
-                type: "image_url",
-                image_url: {
-                  url: `data:image/jpeg;base64,${base64Image}`,
-                },
-              },
-            ],
-          },
-        ],
-      });
+      "\nYorumun sonunda kullanıcıyı merakta bırak.",
+  },
+  {
+    role: "user",
+    content: [
+      {
+        type: "text",
+        text: "Bu kahve fincanı fotoğrafını yorumla. Fincandaki şekilleri sezgisel, doğal ve akıcı biçimde ele al.",
+      },
+      {
+        type: "image_url",
+        image_url: {
+          url: `data:image/jpeg;base64,${base64Image}`,
+        },
+      },
+    ],
+  },
+],
 
       const raw = response.choices?.[0]?.message?.content || "{}";
       const parsed = JSON.parse(raw);
