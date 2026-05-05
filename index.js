@@ -586,23 +586,23 @@ app.post(
   {
     role: "system",
     content:
-      buildCoffeeSystemPrompt({
-        cleanName,
-        isPremium: userProfile.premium,
-        memoryText: userProfile.memoryText,
-        memoryCount: userProfile.memoryCount,
-        profileSummary: userProfile.profileSummary,
-        identityText: userProfile.identityText,
-      }) +
-      "\n" +
-      (partnerInfo
-        ? `İlişki yaşadığı kişi:
+  buildCoffeeSystemPrompt({
+    cleanName,
+    isPremium: userProfile.premium,
+    memoryText: userProfile.memoryText,
+    memoryCount: userProfile.memoryCount,
+    profileSummary: userProfile.profileSummary,
+    identityText: userProfile.identityText,
+  }) +
+  "\n" +
+  (partnerInfo
+    ? `İlişki yaşadığı kişi:
 ${partnerInfo}
 
 Bu bilgileri özellikle aşk ve bağ yorumunda kullan.`
-        : `Kullanıcı partner bilgisi girmemiş.
+    : `Kullanıcı partner bilgisi girmemiş.
 Eğer aşk konusu varsa doğal şekilde profil bilgisi eklemesini öner.`) +
-      "\nYorumun sonunda kullanıcıyı merakta bırak.",
+  "\nYorumun sonunda kullanıcıyı merakta bırak.",
   },
   {
     role: "user",
