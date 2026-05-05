@@ -620,6 +620,7 @@ Eğer aşk konusu varsa doğal şekilde profil bilgisi eklemesini öner.`) +
     ],
   },
 ],
+        });
 
       const raw = response.choices?.[0]?.message?.content || "{}";
       const parsed = JSON.parse(raw);
