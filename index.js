@@ -600,6 +600,79 @@ app.post(
 
       const userProfile = await getUserProfile(req.uid);
       const base64Image = fs.readFileSync(filePath, { encoding: "base64" });
+            // GÖRSEL KAHVE FALI İÇİN UYGUN MU KONTROLÜ
+      const validationResponse = await createWithRetry({
+        model: "gpt-4.1-mini",
+        response_format: { type: "json_object" },
+        temperature: 0,
+        messages: [
+          {
+            role: "system",
+            content: `
+Sen bir görsel doğrulama sistemisin.
+
+Görev:
+Kullanıcının gönderdiği görsel gerçekten kahve falı için uygun mu kontrol et.
+
+SADECE şu durumlarda true ver:
+- Türk kahvesi fincanı
+- Kahve telvesi
+- Kahve falı tabağı
+- Fincan içindeki telve izleri
+
+Şu durumlarda false ver:
+- İnsan fotoğrafı
+- Selfie
+- Manzara
+- Hayvan
+- Rastgele obje
+- Boş görsel
+- Yazı ekran görüntüsü
+- Tarot kartı
+- Başka herhangi bir şey
+
+Sadece JSON döndür:
+
+{
+  "isCoffeeCup": true
+}
+
+veya
+
+{
+  "isCoffeeCup": false
+}
+            `.trim(),
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Bu görsel kahve falı için uygun mu?",
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:image/jpeg;base64,${base64Image}`,
+                },
+              },
+            ],
+          },
+        ],
+      });
+
+      const validationRaw =
+        validationResponse.choices?.[0]?.message?.content || "{}";
+
+      const validationParsed = JSON.parse(validationRaw);
+
+      if (!validationParsed.isCoffeeCup) {
+        return res.status(400).json({
+          error:
+            "Bu görsel kahve falı için uygun değil. Lütfen kahve fincanı veya telve görseli yükleyin.",
+        });
+      }
 
       const response = await createWithRetry({
         model: "gpt-4.1-mini",
