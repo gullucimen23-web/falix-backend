@@ -143,7 +143,7 @@ async function authMiddleware(req, res, next) {
   }
 }
 
-async function checkUserAccess(uid, cost, reason) {
+async function checkUserAccess(uid, cost, reason, freeRightField = null) {
   const ref = db.collection("users").doc(uid);
 
   return db.runTransaction(async (tx) => {
@@ -156,6 +156,10 @@ async function checkUserAccess(uid, cost, reason) {
         premium: false,
         dailyUsage: 0,
         lastUsageDate: "",
+        freeTarotCount: 0,
+        freeCoffeeCount: 0,
+        expertMessageCount: 0,
+        adFreeCount: 0,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
@@ -164,6 +168,35 @@ async function checkUserAccess(uid, cost, reason) {
 
     const data = snap.data() || {};
     const today = getTodayKey();
+
+    if (freeRightField) {
+      const freeRightCount = Number(data[freeRightField] || 0);
+
+      if (freeRightCount > 0) {
+        const newFreeRightCount = freeRightCount - 1;
+
+        tx.update(ref, {
+          [freeRightField]: newFreeRightCount,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        const historyRef = ref.collection("free_right_history").doc();
+        tx.set(historyRef, {
+          type: "free_right_used",
+          field: freeRightField,
+          amount: -1,
+          balanceAfter: newFreeRightCount,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          meta: { reason },
+        });
+
+        return {
+          ok: true,
+          usedFreeRight: true,
+          freeRightField,
+        };
+      }
+    }
 
     let coin = Number(data.coin || 0);
     const premium = Boolean(data.premium || false);
@@ -205,6 +238,49 @@ async function checkUserAccess(uid, cost, reason) {
         meta: { reason },
       });
     }
+
+    return {
+      ok: true,
+      usedFreeRight: false,
+    };
+  });
+}
+
+
+async function consumeFreeRight(uid, fieldName, historyCollection, historyType) {
+  const ref = db.collection("users").doc(uid);
+
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) {
+      throw new Error("USER_NOT_FOUND");
+    }
+
+    const data = snap.data() || {};
+    const current = Number(data[fieldName] || 0);
+
+    if (current <= 0) {
+      throw new Error("NO_FREE_RIGHT");
+    }
+
+    const newValue = current - 1;
+
+    tx.set(
+      ref,
+      {
+        [fieldName]: newValue,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    const historyRef = ref.collection(historyCollection).doc();
+    tx.set(historyRef, {
+      type: historyType,
+      amount: -1,
+      balanceAfter: newValue,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
 
     return true;
   });
@@ -485,10 +561,20 @@ Kurallar:
 
 app.post("/tarot", authMiddleware, async (req, res) => {
   try {
-    const { cards = [], topic = "genel", userName = "Güzel Ruh" } = req.body;
+    const {
+      cards = [],
+      topic = "genel",
+      userName = "Güzel Ruh",
+      useFreeTarot = false,
+    } = req.body;
     const cleanName = safeUserName(userName);
 
-    await checkUserAccess(req.uid, 80, "tarot_ai");
+    await checkUserAccess(
+      req.uid,
+      80,
+      "tarot_ai",
+      useFreeTarot === true ? "freeTarotCount" : null
+    );
 
     const userProfile = await getUserProfile(req.uid);
 
@@ -524,6 +610,10 @@ app.post("/tarot", authMiddleware, async (req, res) => {
 
     if (errorText.includes("DAILY_LIMIT")) {
       return res.status(429).json({ error: "Günlük AI limitine ulaştın." });
+    }
+
+    if (errorText.includes("NO_FREE_RIGHT")) {
+      return res.status(402).json({ error: "Ücretsiz hakkın bulunamadı." });
     }
 
     if (errorText.includes("NO_COIN")) {
@@ -562,7 +652,14 @@ app.post(
       }
 
       const cleanName = safeUserName(req.body?.userName);
-      await checkUserAccess(req.uid, 120, "coffee_ai");
+      const useFreeCoffee = String(req.body?.useFreeCoffee || "false") === "true";
+
+      await checkUserAccess(
+        req.uid,
+        120,
+        "coffee_ai",
+        useFreeCoffee ? "freeCoffeeCount" : null
+      );
 
       const userProfile = await getUserProfile(req.uid);
       const base64Image = fs.readFileSync(filePath, { encoding: "base64" });
@@ -613,6 +710,10 @@ app.post(
 
       if (errorText.includes("DAILY_LIMIT")) {
         return res.status(429).json({ error: "Günlük AI limitine ulaştın." });
+      }
+
+      if (errorText.includes("NO_FREE_RIGHT")) {
+        return res.status(402).json({ error: "Ücretsiz hakkın bulunamadı." });
       }
 
       if (errorText.includes("NO_COIN")) {
