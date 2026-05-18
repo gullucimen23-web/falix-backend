@@ -692,10 +692,12 @@ const useFreeCoffee = String(req.body?.useFreeCoffee || "false") === "true";
         req.uid,
         120,
         "coffee_ai",
-        useFreeCoffee ? "freeCoffeeCount" : null
+        String(useFreeCoffee) === "true"
+  ? "freeCoffeeCount"
+  : null
       );
 const partnerInfo = req.body?.partnerInfo || "";
-      await checkUserAccess(req.uid, 120, "coffee_ai");
+      
 
       const userProfile = await getUserProfile(req.uid);
       const base64Image = fs.readFileSync(filePath, { encoding: "base64" });
