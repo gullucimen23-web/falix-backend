@@ -595,12 +595,6 @@ const {
       cards = [],
       topic = "genel",
       userName = "Güzel Ruh",
-      useFreeTarot = false,
-    } = req.body;
-const {
-      cards = [],
-      topic = "genel",
-      userName = "Güzel Ruh",
       partnerInfo = "",
       useFreeTarot = false,
     } = req.body;
