@@ -686,15 +686,16 @@ app.post(
       }
 
       const cleanName = safeUserName(req.body?.userName);
-const useFreeCoffee = String(req.body?.useFreeCoffee || "false") === "true";
+      const useFreeCoffee =
+        String(req.body?.useFreeCoffee || "false") === "true";
 
       await checkUserAccess(
         req.uid,
         120,
         "coffee_ai",
         String(useFreeCoffee) === "true"
-  ? "freeCoffeeCount"
-  : null
+          ? "freeCoffeeCount"
+          : null
       );
 const partnerInfo = req.body?.partnerInfo || "";
       
