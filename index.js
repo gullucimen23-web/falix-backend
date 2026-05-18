@@ -591,16 +591,19 @@ Kurallar:
 
 app.post("/tarot", authMiddleware, async (req, res) => {
   try {
-<<<<<<< HEAD
-    const {
+const {
       cards = [],
       topic = "genel",
       userName = "Güzel Ruh",
       useFreeTarot = false,
     } = req.body;
-=======
-    const { cards = [], topic = "genel", userName = "Güzel Ruh", partnerInfo = "" } = req.body;
->>>>>>> 4bced4c0152faadf885ac7039aad6ea758ef5b33
+const {
+      cards = [],
+      topic = "genel",
+      userName = "Güzel Ruh",
+      partnerInfo = "",
+      useFreeTarot = false,
+    } = req.body;
     const cleanName = safeUserName(userName);
 
     await checkUserAccess(
@@ -689,8 +692,7 @@ app.post(
       }
 
       const cleanName = safeUserName(req.body?.userName);
-<<<<<<< HEAD
-      const useFreeCoffee = String(req.body?.useFreeCoffee || "false") === "true";
+const useFreeCoffee = String(req.body?.useFreeCoffee || "false") === "true";
 
       await checkUserAccess(
         req.uid,
@@ -698,10 +700,8 @@ app.post(
         "coffee_ai",
         useFreeCoffee ? "freeCoffeeCount" : null
       );
-=======
-      const partnerInfo = req.body?.partnerInfo || "";
+const partnerInfo = req.body?.partnerInfo || "";
       await checkUserAccess(req.uid, 120, "coffee_ai");
->>>>>>> 4bced4c0152faadf885ac7039aad6ea758ef5b33
 
       const userProfile = await getUserProfile(req.uid);
       const base64Image = fs.readFileSync(filePath, { encoding: "base64" });
