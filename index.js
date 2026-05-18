@@ -610,7 +610,7 @@ const {
       req.uid,
       80,
       "tarot_ai",
-      useFreeTarot === true ? "freeTarotCount" : null
+      String(useFreeTarot) === "true" ? "freeTarotCount" : null
     );
 
     const userProfile = await getUserProfile(req.uid);
