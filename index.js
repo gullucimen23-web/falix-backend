@@ -31,6 +31,10 @@ if (!admin.apps.length) {
 
 const db = admin.firestore();
 
+const STANDARD_DAILY_TAROT_LIMIT = 1;
+const STANDARD_DAILY_COFFEE_LIMIT = 1;
+const STANDARD_DAILY_AI_LIMIT = STANDARD_DAILY_TAROT_LIMIT + STANDARD_DAILY_COFFEE_LIMIT;
+
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
@@ -143,31 +147,69 @@ async function authMiddleware(req, res, next) {
   }
 }
 
+
+function dailyLimitConfig(reason) {
+  if (reason === "tarot_ai") {
+    return {
+      field: "tarotDailyUsage",
+      lastField: "lastTarotUsageDate",
+      limit: STANDARD_DAILY_TAROT_LIMIT,
+      code: "DAILY_TAROT_LIMIT",
+    };
+  }
+
+  if (reason === "coffee_ai") {
+    return {
+      field: "coffeeDailyUsage",
+      lastField: "lastCoffeeUsageDate",
+      limit: STANDARD_DAILY_COFFEE_LIMIT,
+      code: "DAILY_COFFEE_LIMIT",
+    };
+  }
+
+  return null;
+}
+
 async function checkUserAccess(uid, cost, reason, freeRightField = null) {
   const ref = db.collection("users").doc(uid);
 
   return db.runTransaction(async (tx) => {
-    let snap = await tx.get(ref);
+    const snap = await tx.get(ref);
+    const defaultUserData = {
+      coin: 100,
+      premiumCoin: 0,
+      premium: false,
+      dailyUsage: 0,
+      lastUsageDate: "",
+      tarotDailyUsage: 0,
+      lastTarotUsageDate: "",
+      coffeeDailyUsage: 0,
+      lastCoffeeUsageDate: "",
+      freeTarotCount: 0,
+      freeCoffeeCount: 0,
+      expertMessageCount: 0,
+      adFreeCount: 0,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
 
     if (!snap.exists) {
-      tx.set(ref, {
-        coin: 100,
-        premiumCoin: 0,
-        premium: false,
-        dailyUsage: 0,
-        lastUsageDate: "",
-        freeTarotCount: 0,
-        freeCoffeeCount: 0,
-        expertMessageCount: 0,
-        adFreeCount: 0,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
-
-      snap = await tx.get(ref);
+      tx.set(ref, defaultUserData);
     }
 
-    const data = snap.data() || {};
+    const data = snap.exists ? snap.data() || {} : defaultUserData;
     const today = getTodayKey();
+
+    const typeLimit = dailyLimitConfig(reason);
+    let typeUsage = 0;
+
+    if (!Boolean(data.premium || false) && typeLimit) {
+      const lastTypeUsageDate = String(data[typeLimit.lastField] || "");
+      typeUsage = lastTypeUsageDate === today ? Number(data[typeLimit.field] || 0) : 0;
+
+      if (typeUsage >= typeLimit.limit) {
+        throw new Error(typeLimit.code);
+      }
+    }
 
     if (freeRightField) {
       const freeRightCount = Number(data[freeRightField] || 0);
@@ -177,6 +219,12 @@ async function checkUserAccess(uid, cost, reason, freeRightField = null) {
 
         tx.update(ref, {
           [freeRightField]: newFreeRightCount,
+          ...(typeLimit
+            ? {
+                [typeLimit.field]: typeUsage + 1,
+                [typeLimit.lastField]: today,
+              }
+            : {}),
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
 
@@ -207,7 +255,7 @@ async function checkUserAccess(uid, cost, reason, freeRightField = null) {
       dailyUsage = 0;
     }
 
-    if (!premium && dailyUsage >= 5) {
+    if (!premium && dailyUsage >= STANDARD_DAILY_AI_LIMIT) {
       throw new Error("DAILY_LIMIT");
     }
 
@@ -224,6 +272,12 @@ async function checkUserAccess(uid, cost, reason, freeRightField = null) {
         : {
             dailyUsage: dailyUsage + 1,
             lastUsageDate: today,
+            ...(typeLimit
+              ? {
+                  [typeLimit.field]: typeUsage + 1,
+                  [typeLimit.lastField]: today,
+                }
+              : {}),
           }),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
@@ -642,8 +696,20 @@ const {
   } catch (e) {
     const errorText = String(e);
 
+    if (errorText.includes("DAILY_TAROT_LIMIT")) {
+      return res.status(429).json({
+        error: "Bugünkü ücretsiz Tarot limitin doldu. Devam etmek için Premium'a geç veya Premium Coin al.",
+      });
+    }
+
+    if (errorText.includes("DAILY_COFFEE_LIMIT")) {
+      return res.status(429).json({
+        error: "Bugünkü ücretsiz Kahve limitin doldu. Devam etmek için Premium'a geç veya Premium Coin al.",
+      });
+    }
+
     if (errorText.includes("DAILY_LIMIT")) {
-      return res.status(429).json({ error: "Günlük AI limitine ulaştın." });
+      return res.status(429).json({ error: "Günlük AI limitine ulaştın. Premium ile sınırsız devam edebilirsin." });
     }
 
     if (errorText.includes("NO_FREE_RIGHT")) {
@@ -823,8 +889,20 @@ veya
     } catch (e) {
       const errorText = String(e);
 
+      if (errorText.includes("DAILY_TAROT_LIMIT")) {
+        return res.status(429).json({
+          error: "Bugünkü ücretsiz Tarot limitin doldu. Devam etmek için Premium'a geç veya Premium Coin al.",
+        });
+      }
+
+      if (errorText.includes("DAILY_COFFEE_LIMIT")) {
+        return res.status(429).json({
+          error: "Bugünkü ücretsiz Kahve limitin doldu. Devam etmek için Premium'a geç veya Premium Coin al.",
+        });
+      }
+
       if (errorText.includes("DAILY_LIMIT")) {
-        return res.status(429).json({ error: "Günlük AI limitine ulaştın." });
+        return res.status(429).json({ error: "Günlük AI limitine ulaştın. Premium ile sınırsız devam edebilirsin." });
       }
 
       if (errorText.includes("NO_FREE_RIGHT")) {
