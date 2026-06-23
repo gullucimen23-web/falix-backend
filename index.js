@@ -300,6 +300,84 @@ async function checkUserAccess(uid, cost, reason, freeRightField = null) {
   });
 }
 
+async function spendPremiumCoin(uid, amount, reason, meta = {}) {
+  const ref = db.collection("users").doc(uid);
+
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) {
+      throw new Error("USER_NOT_FOUND");
+    }
+
+    const data = snap.data() || {};
+    const currentPremiumCoin = Number(data.premiumCoin || 0);
+
+    if (currentPremiumCoin < amount) {
+      throw new Error("NO_PREMIUM_COIN");
+    }
+
+    const newPremiumCoin = currentPremiumCoin - amount;
+
+    tx.update(ref, {
+      premiumCoin: newPremiumCoin,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    const historyRef = ref.collection("premium_coin_history").doc();
+    tx.set(historyRef, {
+      type: "spend",
+      amount: -amount,
+      balanceAfter: newPremiumCoin,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      meta: { reason, ...meta },
+    });
+
+    return { ok: true, balanceAfter: newPremiumCoin };
+  });
+}
+
+async function saveAiReading(uid, type, result, extra = {}) {
+  const userRef = db.collection("users").doc(uid);
+  await userRef.collection("readings").add({
+    type,
+    result: cleanTextForMemory(result, 2200),
+    ...extra,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+}
+
+function monetizationErrorResponse(res, e, label = "İşlem") {
+  const errorText = String(e);
+
+  if (errorText.includes("NO_PREMIUM_COIN")) {
+    return res.status(402).json({
+      error: "Premium Coin yetersiz. Devam etmek için Premium Coin paketi alabilirsin.",
+    });
+  }
+
+  if (errorText.includes("NO_COIN")) {
+    return res.status(402).json({ error: "Coin yetersiz." });
+  }
+
+  if (errorText.includes("DAILY_LIMIT")) {
+    return res.status(429).json({
+      error: "Günlük AI limitine ulaştın. Premium ile sınırsız devam edebilirsin.",
+    });
+  }
+
+  if (errorText.includes("USER_NOT_FOUND")) {
+    return res.status(404).json({ error: "Kullanıcı bulunamadı." });
+  }
+
+  if (errorText.includes("429")) {
+    return res.status(429).json({
+      error: "AI yoğunluğu var. Biraz sonra tekrar dene.",
+    });
+  }
+
+  console.error(`${label.toUpperCase()} ERROR:`, e);
+  return res.status(500).json({ error: `${label} çalışmadı`, detail: errorText });
+}
 
 async function consumeFreeRight(uid, fieldName, historyCollection, historyType) {
   const ref = db.collection("users").doc(uid);
@@ -936,6 +1014,252 @@ veya
     }
   }
 );
+
+
+app.post("/kahin/ask", authMiddleware, async (req, res) => {
+  try {
+    const question = String(req.body?.question || "").trim().slice(0, 900);
+    const cleanName = safeUserName(req.body?.userName);
+
+    if (question.length < 4) {
+      return res.status(400).json({ error: "Lütfen daha net bir soru yaz." });
+    }
+
+    await spendPremiumCoin(req.uid, 50, "kahin_ai_question", { questionPreview: question.slice(0, 120) });
+    const userProfile = await getUserProfile(req.uid);
+
+    const response = await createWithRetry({
+      model: "gpt-4.1-mini",
+      temperature: 0.88,
+      messages: [
+        {
+          role: "system",
+          content: `
+Sen Falix uygulamasının AI Kahin yorumcususun.
+
+Görev:
+- Kullanıcının sorduğu soruya sezgisel, sıcak, kişisel ve akıcı cevap ver.
+- Kesin gelecek vaadi, tıbbi/hukuki/finansal kesin tavsiye verme.
+- Korkutma, bağımlılık yaratma, çaresiz hissettirme.
+- Aşk, ilişki, para ve kariyer konularında yumuşak ve umut veren ama dengeli konuş.
+- Premium Coin harcanan özel cevap olduğu için cevap dolu ve değerli hissettirsin.
+- En sonda tek cümleyle gerçek uzman alanına doğal yönlendir: "İstersen bunu gerçek uzman yorumuyla daha derin açtırabilirsin." gibi.
+
+Kullanıcı adı: ${cleanName}
+Kullanıcı kimlik/profil bilgileri:
+${userProfile.identityText || "Yok"}
+
+Premium geçmiş hafızası:
+${userProfile.profileSummary || userProfile.memoryText || "Henüz yeterli geçmiş yok"}
+          `.trim(),
+        },
+        { role: "user", content: question },
+      ],
+    });
+
+    const answer = response.choices?.[0]?.message?.content || "Kahin cevabı alınamadı.";
+
+    const chatRef = db.collection("users").doc(req.uid).collection("kahin_chats").doc();
+    await chatRef.set({
+      question,
+      answer,
+      cost: 50,
+      currency: "premiumCoin",
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    await saveAiReading(req.uid, "kahin", answer, { question });
+
+    return res.json({ success: true, answer, cost: 50 });
+  } catch (e) {
+    return monetizationErrorResponse(res, e, "Kahin");
+  }
+});
+
+app.post("/dream/interpret", authMiddleware, async (req, res) => {
+  try {
+    const dream = String(req.body?.dream || "").trim().slice(0, 1600);
+    const cleanName = safeUserName(req.body?.userName);
+
+    if (dream.length < 10) {
+      return res.status(400).json({ error: "Rüyanı biraz daha detaylı yaz." });
+    }
+
+    await checkUserAccess(req.uid, 50, "dream_ai");
+    const userProfile = await getUserProfile(req.uid);
+
+    const response = await createWithRetry({
+      model: "gpt-4.1-mini",
+      temperature: 0.9,
+      messages: [
+        {
+          role: "system",
+          content: `
+Sen Falix rüya yorumcususun.
+Rüyayı mistik, sezgisel ve psikolojik sembol diliyle yorumla.
+Bölümler:
+1) Rüyanın ana mesajı
+2) Aşk/ilişki işareti
+3) Para/kariyer işareti
+4) Ruh hâli ve tavsiye
+5) Kapanış
+Kesin hüküm verme, korkutma, tıbbi/psikiyatrik teşhis koyma.
+Kullanıcı: ${cleanName}
+Profil:
+${userProfile.identityText || "Yok"}
+          `.trim(),
+        },
+        { role: "user", content: dream },
+      ],
+    });
+
+    const result = response.choices?.[0]?.message?.content || "Rüya yorumu alınamadı.";
+    await saveAiReading(req.uid, "dream", result, { dream: cleanTextForMemory(dream, 700) });
+    return res.json({ success: true, result, cost: 50 });
+  } catch (e) {
+    return monetizationErrorResponse(res, e, "Rüya tabiri");
+  }
+});
+
+app.post("/katina", authMiddleware, async (req, res) => {
+  try {
+    const spread = String(req.body?.spread || "ask_katinasi").trim();
+    const cleanName = safeUserName(req.body?.userName);
+    const spreadLabel = spread === "dokuz_kart" ? "9 Kart Katina" : spread === "bes_kart" ? "5 Kart Katina" : "Aşk Katinası";
+
+    await checkUserAccess(req.uid, 120, "katina_ai");
+    const userProfile = await getUserProfile(req.uid);
+
+    const response = await createWithRetry({
+      model: "gpt-4.1-mini",
+      temperature: 0.92,
+      messages: [
+        {
+          role: "system",
+          content: `
+Sen Falix Katina falı yorumcususun.
+Açılım: ${spreadLabel}
+
+Yorumu şu yapıda ver:
+- Açılımın genel enerjisi
+- Karşı tarafın niyeti/duygusal mesafesi
+- Aradaki bağ ve engel
+- Yakın dönem işaretleri
+- Net tavsiye
+- Gerçek uzman yorumu için yumuşak kapanış
+
+Kesin hüküm verme, manipülatif konuşma, korkutma.
+Kullanıcı: ${cleanName}
+Profil/hafıza:
+${userProfile.identityText || ""}
+${userProfile.profileSummary || userProfile.memoryText || ""}
+          `.trim(),
+        },
+        { role: "user", content: `${spreadLabel} açılımını yap.` },
+      ],
+    });
+
+    const result = response.choices?.[0]?.message?.content || "Katina yorumu alınamadı.";
+    await saveAiReading(req.uid, "katina", result, { spread });
+    return res.json({ success: true, result, cost: 120 });
+  } catch (e) {
+    return monetizationErrorResponse(res, e, "Katina");
+  }
+});
+
+app.post("/relationship/analyze", authMiddleware, async (req, res) => {
+  try {
+    const userName = safeUserName(req.body?.userName);
+    const partnerName = safeUserName(req.body?.partnerName);
+    const note = String(req.body?.note || "").trim().slice(0, 700);
+
+    if (!userName || !partnerName) {
+      return res.status(400).json({ error: "İki isim de gerekli." });
+    }
+
+    await spendPremiumCoin(req.uid, 100, "relationship_analysis", { partnerName });
+    const userProfile = await getUserProfile(req.uid);
+
+    const response = await createWithRetry({
+      model: "gpt-4.1-mini",
+      temperature: 0.86,
+      messages: [
+        {
+          role: "system",
+          content: `
+Sen Falix ilişki uyumu yorumcususun.
+Premium Coin harcanan özel analiz olduğu için cevap derin ve düzenli olsun.
+Bölümler:
+1) Uyum yüzdesi hissi (kesin matematik değil, "enerji olarak")
+2) Güçlü bağlar
+3) Zorlayan noktalar
+4) Karşı tarafın olası enerjisi
+5) Yakın dönem tavsiyesi
+6) Uzman yorumu yönlendirmesi
+Kesin sonuç, garanti, manipülasyon ve korkutma yok.
+Kullanıcı profili:
+${userProfile.identityText || "Yok"}
+          `.trim(),
+        },
+        {
+          role: "user",
+          content: `Kullanıcı: ${userName}\nKarşı taraf: ${partnerName}\nNot: ${note || "Yok"}`,
+        },
+      ],
+    });
+
+    const result = response.choices?.[0]?.message?.content || "İlişki analizi alınamadı.";
+    await saveAiReading(req.uid, "relationship", result, { partnerName, note: cleanTextForMemory(note, 500) });
+    return res.json({ success: true, result, cost: 100 });
+  } catch (e) {
+    return monetizationErrorResponse(res, e, "İlişki analizi");
+  }
+});
+
+app.post("/astrology/daily", authMiddleware, async (req, res) => {
+  try {
+    const sign = String(req.body?.sign || "Koç").trim().slice(0, 20);
+    const cleanName = safeUserName(req.body?.userName);
+    const today = getTodayKey();
+    const docId = `${today}_${sign.toLowerCase().replace(/\s+/g, "_")}`;
+    const cacheRef = db.collection("daily_horoscopes").doc(docId);
+    const cached = await cacheRef.get();
+
+    if (cached.exists && cached.data()?.result) {
+      return res.json({ success: true, result: cached.data().result, cached: true });
+    }
+
+    const response = await createWithRetry({
+      model: "gpt-4.1-mini",
+      temperature: 0.82,
+      messages: [
+        {
+          role: "system",
+          content: `
+Sen Falix günlük burç yorumcususun.
+Burç: ${sign}
+Tarih: ${today}
+Kullanıcı hitabı: ${cleanName}
+
+Kısa ama değerli yorum yaz:
+- Genel enerji
+- Aşk
+- Para/kariyer
+- Günün tavsiyesi
+Kesin hüküm yok, korkutma yok.
+          `.trim(),
+        },
+        { role: "user", content: `${sign} burcu için bugünün yorumunu üret.` },
+      ],
+    });
+
+    const result = response.choices?.[0]?.message?.content || "Burç yorumu alınamadı.";
+    await cacheRef.set({ sign, date: today, result, createdAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    return res.json({ success: true, result, cached: false });
+  } catch (e) {
+    return monetizationErrorResponse(res, e, "Günlük burç");
+  }
+});
 
 const PORT = process.env.PORT || 3000;
 
